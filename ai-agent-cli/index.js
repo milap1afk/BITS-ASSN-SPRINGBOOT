@@ -44,12 +44,16 @@ const MODEL = "llama-3.3-70b-versatile";
 
 // ─── Tool Implementations ────────────────────────────────────────────
 
-/** Execute a shell command and return its output. */
+/** Execute a shell command and return its output (truncated to prevent context blowups). */
 async function executeCommand(cmd = "") {
   return new Promise((res) => {
-    exec(cmd, { maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
-      if (error) res(`Error: ${error.message}`);
-      else res(stdout || stderr || `Command executed successfully: ${cmd}`);
+    exec(cmd, { maxBuffer: 5 * 1024 * 1024 }, (error, stdout, stderr) => {
+      let output = stdout || stderr || `Command executed successfully: ${cmd}`;
+      if (error) output = `Error: ${error.message}\n${output}`;
+      if (output.length > 2000) {
+        output = output.substring(0, 2000) + "\n...[OUTPUT TRUNCATED to 2000 chars]";
+      }
+      res(output);
     });
   });
 }
