@@ -22,7 +22,7 @@ Built with an **iterative agent loop** — the agent reasons through the task st
 | Component | Technology |
 |-----------|------------|
 | Runtime | Node.js |
-| AI Model | OpenAI GPT-4.1-mini |
+| AI Model | Groq Llama 3.3 70B (free tier) |
 | Architecture | ReAct Agent Loop |
 | Output | HTML + CSS + JS |
 
@@ -31,7 +31,7 @@ Built with an **iterative agent loop** — the agent reasons through the task st
 ### Prerequisites
 
 - Node.js (v18 or later)
-- OpenAI API Key
+- Groq API Key (free at https://console.groq.com/keys)
 
 ### Installation
 
@@ -46,8 +46,8 @@ npm install
 # Create environment file
 cp .env.example .env
 
-# Add your OpenAI API key to .env
-# OPENAI_API_KEY=sk-your-key-here
+# Add your Groq API key to .env (free from https://console.groq.com/keys)
+# GROQ_API_KEY=your-key-here
 ```
 
 ### Running the Agent
