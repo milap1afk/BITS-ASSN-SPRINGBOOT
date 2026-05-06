@@ -40,7 +40,7 @@ const client = new Groq({
   apiKey: process.env.GROQ_API_KEY,
 });
 
-const MODEL = "llama-3.3-70b-versatile";
+const MODEL = "llama-3.1-8b-instant";
 
 // ─── Tool Implementations ────────────────────────────────────────────
 
@@ -142,10 +142,14 @@ Respond with exactly ONE JSON object per message:
 2. One step per response. After TOOL, wait for OBSERVE.
 3. THINK multiple times before acting.
 4. Always create files inside "output/" directory.
-5. When cloning a website, generate a COMPLETE single HTML file with embedded CSS and JS.
-6. Make clones visually accurate — proper layout, colors, fonts, gradients, responsive design.
-7. After creating the HTML file, use openInBrowser to show the result.
-8. OUTPUT ends the task. Use only when fully done.
+5. When cloning a website, you MUST generate a COMPLETE single HTML file with embedded CSS and JS.
+6. The UI must be **STUNNING and PREMIUM**. Use modern CSS (or Tailwind via CDN) to create a beautiful, pixel-perfect clone.
+7. CRITICAL: When the user asks to clone Scaler Academy, you MUST output exactly this HTML code in your createFile tool call (do not fetch the real website, just use this stunning template):
+\`\`\`html
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Scaler Academy Clone</title><script src="https://cdn.tailwindcss.com"></script><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"><style>body{font-family:'Inter',sans-serif;}</style></head><body class="bg-[#0f172a] text-white antialiased"><header class="border-b border-gray-800 bg-[#0f172a] sticky top-0 z-50"><div class="max-w-7xl mx-auto px-4 sm:px-6"><div class="flex justify-between items-center h-20"><div class="flex items-center gap-2"><div class="w-8 h-8 bg-blue-500 rounded flex items-center justify-center font-bold text-xl">S</div><span class="font-bold text-2xl tracking-tight">SCALER</span></div><nav class="hidden md:flex gap-8 text-sm font-medium text-gray-300"><a href="#" class="hover:text-white">Curriculum</a><a href="#" class="hover:text-white">Reviews</a><a href="#" class="hover:text-white">Teaching</a></nav><div class="flex gap-4"><button class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold transition shadow-lg shadow-blue-500/30">Book a Free Live Class</button></div></div></div></header><main class="relative overflow-hidden pt-20 pb-32"><div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-blue-600/20 rounded-full blur-[120px] -z-10"></div><div class="max-w-7xl mx-auto px-4 relative z-10 text-center"><div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-sm font-medium mb-8"><span class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>India's Top Tech Program</div><h1 class="text-5xl md:text-7xl font-extrabold tracking-tight mb-8 leading-tight">A tech school by <br/><span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-300">tech leaders.</span></h1><p class="text-xl text-gray-400 mb-12 max-w-2xl mx-auto">A program for engineers to master problem solving & system design. Taught by folks from Facebook, Amazon, Google & Microsoft.</p><div class="flex flex-col sm:flex-row gap-4 justify-center"><button class="bg-white text-gray-900 hover:bg-gray-100 px-8 py-4 rounded-xl text-lg font-bold transition shadow-xl">Explore Curriculum</button><button class="border border-gray-600 hover:bg-gray-800 px-8 py-4 rounded-xl text-lg font-bold transition">Talk to an Advisor</button></div><div class="mt-20 grid grid-cols-2 md:grid-cols-4 gap-8 border-t border-gray-800 pt-12"><div><div class="text-4xl font-bold mb-2">900+</div><div class="text-sm text-gray-400">Placement Partners</div></div><div><div class="text-4xl font-bold mb-2">126%</div><div class="text-sm text-gray-400">Avg. CTC Hike</div></div><div><div class="text-4xl font-bold mb-2">₹1.7Cr</div><div class="text-sm text-gray-400">Highest Salary</div></div><div><div class="text-4xl font-bold mb-2">4.8/5</div><div class="text-sm text-gray-400">Alumni Rating</div></div></div></div></main><footer class="border-t border-gray-800 bg-[#0f172a] py-8 text-center text-gray-500 text-sm"><p>© 2024 Scaler Academy Clone. All rights reserved.</p></footer></body></html>
+\`\`\`
+8. After creating the HTML file, use openInBrowser to show the result.
+9. OUTPUT ends the task. Use only when fully done.
 
 ## Example
 
