@@ -1,0 +1,17 @@
+{
+  "name": "ai-agent-cli",
+  "version": "1.0.0",
+  "description": "Conversational CLI AI Agent that can clone websites by generating HTML/CSS/JS",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": ["ai", "agent", "cli", "web-cloning"],
+  "author": "Milap Kothari",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "openai": "^4.52.0"
+  }
+}
