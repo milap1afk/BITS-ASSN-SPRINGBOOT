@@ -4,13 +4,15 @@
 //  A terminal-based AI agent that accepts natural language instructions
 //  and generates working HTML/CSS/JS websites using an iterative
 //  reasoning loop: START → THINK → TOOL → OBSERVE → OUTPUT
+//
+//  Powered by Groq (Free Llama 3 API)
 // ═══════════════════════════════════════════════════════════════════════
 
 import "dotenv/config";
-import { OpenAI } from "openai";
+import Groq from "groq-sdk";
 import { exec } from "child_process";
 import { writeFileSync, readFileSync, existsSync, mkdirSync, readdirSync } from "fs";
-import { join, resolve } from "path";
+import { resolve } from "path";
 import { createInterface } from "readline";
 
 // ─── ANSI Color Helpers ──────────────────────────────────────────────
@@ -26,7 +28,6 @@ const C = {
   cyan:    "\x1b[36m",
   white:   "\x1b[37m",
   bgBlue:  "\x1b[44m",
-  bgMagenta: "\x1b[45m",
 };
 
 function log(color, icon, label, msg) {
@@ -34,37 +35,30 @@ function log(color, icon, label, msg) {
   if (msg) console.log(`${C.dim}     ${msg}${C.reset}`);
 }
 
-// ─── OpenAI Client ───────────────────────────────────────────────────
-const client = new OpenAI();
+// ─── Groq Client ─────────────────────────────────────────────────────
+const client = new Groq({
+  apiKey: process.env.GROQ_API_KEY,
+});
+
+const MODEL = "llama-3.3-70b-versatile";
 
 // ─── Tool Implementations ────────────────────────────────────────────
 
-/**
- * Execute a shell command and return its output.
- * Used for mkdir, ls, open, etc.
- */
+/** Execute a shell command and return its output. */
 async function executeCommand(cmd = "") {
-  return new Promise((resolve, reject) => {
+  return new Promise((res) => {
     exec(cmd, { maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
-      if (error) {
-        resolve(`Error: ${error.message}`);
-      } else {
-        resolve(stdout || stderr || `Command executed successfully: ${cmd}`);
-      }
+      if (error) res(`Error: ${error.message}`);
+      else res(stdout || stderr || `Command executed successfully: ${cmd}`);
     });
   });
 }
 
-/**
- * Create or overwrite a file with given content.
- * Automatically creates parent directories.
- */
+/** Create or overwrite a file with given content. Auto-creates directories. */
 async function createFile({ filePath, content }) {
   try {
     const dir = filePath.substring(0, filePath.lastIndexOf("/"));
-    if (dir && !existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
-    }
+    if (dir && !existsSync(dir)) mkdirSync(dir, { recursive: true });
     writeFileSync(filePath, content, "utf-8");
     return `File created successfully: ${filePath} (${content.length} bytes)`;
   } catch (err) {
@@ -72,29 +66,20 @@ async function createFile({ filePath, content }) {
   }
 }
 
-/**
- * Read the contents of a file.
- */
+/** Read the contents of a file. */
 async function readFile({ filePath }) {
   try {
-    if (!existsSync(filePath)) {
-      return `Error: File not found: ${filePath}`;
-    }
-    const content = readFileSync(filePath, "utf-8");
-    return content;
+    if (!existsSync(filePath)) return `Error: File not found: ${filePath}`;
+    return readFileSync(filePath, "utf-8");
   } catch (err) {
     return `Error reading file: ${err.message}`;
   }
 }
 
-/**
- * List files in a directory.
- */
+/** List files in a directory. */
 async function listFiles({ dirPath }) {
   try {
-    if (!existsSync(dirPath)) {
-      return `Error: Directory not found: ${dirPath}`;
-    }
+    if (!existsSync(dirPath)) return `Error: Directory not found: ${dirPath}`;
     const files = readdirSync(dirPath);
     return files.length > 0 ? files.join("\n") : "(empty directory)";
   } catch (err) {
@@ -102,43 +87,24 @@ async function listFiles({ dirPath }) {
   }
 }
 
-/**
- * Open a file in the default browser.
- */
+/** Open a file in the default browser. */
 async function openInBrowser({ filePath }) {
   const absPath = resolve(filePath);
-  // macOS: open, Linux: xdg-open, Windows: start
   const cmd = process.platform === "darwin"
     ? `open "${absPath}"`
     : process.platform === "win32"
     ? `start "${absPath}"`
     : `xdg-open "${absPath}"`;
-
   return executeCommand(cmd);
 }
 
 // ─── Tool Registry ───────────────────────────────────────────────────
 const TOOLS = {
-  executeCommand: {
-    fn: (args) => executeCommand(args.cmd),
-    desc: "Execute a shell command (mkdir, ls, etc.)",
-  },
-  createFile: {
-    fn: createFile,
-    desc: "Create/write a file with content",
-  },
-  readFile: {
-    fn: readFile,
-    desc: "Read contents of a file",
-  },
-  listFiles: {
-    fn: listFiles,
-    desc: "List files in a directory",
-  },
-  openInBrowser: {
-    fn: openInBrowser,
-    desc: "Open an HTML file in the default browser",
-  },
+  executeCommand: { fn: (args) => executeCommand(args.cmd) },
+  createFile:     { fn: createFile },
+  readFile:       { fn: readFile },
+  listFiles:      { fn: listFiles },
+  openInBrowser:  { fn: openInBrowser },
 };
 
 // ─── System Prompt ───────────────────────────────────────────────────
@@ -146,182 +112,127 @@ const SYSTEM_PROMPT = `
 You are an AI Agent running inside a CLI terminal. You work in an iterative loop of:
 START → THINK → TOOL → OBSERVE → THINK → TOOL → OBSERVE → ... → OUTPUT
 
-You break down complex tasks into small steps, executing one tool call at a time, 
-and waiting for the observation before proceeding to the next step.
+You break down complex tasks into small steps, executing one tool call at a time,
+and waiting for the observation before proceeding.
 
 ## Available Tools
 
-1. **executeCommand** — Run a shell command on the user's machine.
-   Args: { "cmd": "string" }
+1. **executeCommand** — Run a shell command. Args: { "cmd": "string" }
+2. **createFile** — Create/write a file. Args: { "filePath": "string", "content": "string" }
+3. **readFile** — Read a file. Args: { "filePath": "string" }
+4. **listFiles** — List directory contents. Args: { "dirPath": "string" }
+5. **openInBrowser** — Open HTML in browser. Args: { "filePath": "string" }
 
-2. **createFile** — Create or overwrite a file with content.
-   Args: { "filePath": "string", "content": "string" }
+## Response Format (STRICT JSON — no markdown, no backticks)
 
-3. **readFile** — Read the contents of a file.
-   Args: { "filePath": "string" }
+Respond with exactly ONE JSON object per message:
 
-4. **listFiles** — List all files in a directory.
-   Args: { "dirPath": "string" }
+{ "step": "START", "content": "description of user request" }
+{ "step": "THINK", "content": "reasoning about next action" }
+{ "step": "TOOL", "content": "what this does", "tool_name": "name", "tool_args": { ... } }
+{ "step": "OUTPUT", "content": "final summary to user" }
 
-5. **openInBrowser** — Open an HTML file in the default browser.
-   Args: { "filePath": "string" }
+## Rules
 
-## Response Format (STRICT JSON)
+1. Output ONLY valid JSON. No markdown fences, no extra text.
+2. One step per response. After TOOL, wait for OBSERVE.
+3. THINK multiple times before acting.
+4. Always create files inside "output/" directory.
+5. When cloning a website, generate a COMPLETE single HTML file with embedded CSS and JS.
+6. Make clones visually accurate — proper layout, colors, fonts, gradients, responsive design.
+7. After creating the HTML file, use openInBrowser to show the result.
+8. OUTPUT ends the task. Use only when fully done.
 
-You must ALWAYS respond with a single JSON object in one of these formats:
+## Example
 
-{ "step": "START", "content": "Brief description of what you understand from the user request" }
-{ "step": "THINK", "content": "Your reasoning about what to do next" }
-{ "step": "TOOL", "content": "What this tool call does", "tool_name": "toolName", "tool_args": { ... } }
-{ "step": "OUTPUT", "content": "Final message to the user summarizing what was done" }
-
-## Critical Rules
-
-1. ALWAYS output valid JSON — no markdown, no extra text, just one JSON object per response.
-2. Do ONE step at a time. After a TOOL step, STOP and wait for the OBSERVE result.
-3. THINK multiple times before acting. Plan first, then execute.
-4. After every TOOL call, wait for OBSERVE, then THINK about the result.
-5. Use createFile to write HTML/CSS/JS files. Use openInBrowser to show the result.
-6. When cloning a website, create a COMPLETE single-page HTML file with embedded CSS and JS.
-7. Make the clone visually accurate — include proper layout, colors, fonts, gradients, responsive design.
-8. Always create files inside an "output/" directory relative to where the agent runs.
-9. When finished, use openInBrowser to open the final HTML file, then respond with OUTPUT step.
-10. The OUTPUT step ends the current task. Use it only when everything is complete.
+User: What is the weather of Delhi?
+{ "step": "START", "content": "User wants the current weather of Delhi" }
+{ "step": "THINK", "content": "I should use executeCommand to fetch weather via curl" }
+{ "step": "TOOL", "content": "Fetching weather data", "tool_name": "executeCommand", "tool_args": { "cmd": "curl -s wttr.in/Delhi?format=%C+%t" } }
+(OBSERVE: "Partly cloudy +33°C")
+{ "step": "THINK", "content": "Got the weather. Let me present it to the user." }
+{ "step": "OUTPUT", "content": "The weather in Delhi is Partly cloudy +33°C" }
 `;
 
 // ─── Agent Loop ──────────────────────────────────────────────────────
 
-/**
- * Process a single user message through the agent loop.
- * The agent iterates through START/THINK/TOOL/OBSERVE/OUTPUT steps
- * until it reaches an OUTPUT step or hits the max iteration limit.
- */
-async function agentLoop(userMessage, conversationHistory) {
-  // Add user message to history
-  conversationHistory.push({
-    role: "user",
-    content: userMessage,
-  });
+async function agentLoop(userMessage, history) {
+  history.push({ role: "user", content: userMessage });
 
-  const MAX_ITERATIONS = 30;
-  let iteration = 0;
+  const MAX_ITER = 30;
+  let iter = 0;
 
-  while (iteration < MAX_ITERATIONS) {
-    iteration++;
-
+  while (iter < MAX_ITER) {
+    iter++;
     try {
-      // Call OpenAI API
       const response = await client.chat.completions.create({
-        model: "gpt-4.1-mini",
-        messages: conversationHistory,
+        model: MODEL,
+        messages: history,
         temperature: 0.1,
+        response_format: { type: "json_object" }
       });
 
-      const rawContent = response.choices[0].message.content.trim();
+      const raw = response.choices[0].message.content.trim();
 
-      // Parse JSON response
+      // Parse JSON
       let parsed;
       try {
-        // Handle potential markdown code blocks
-        const cleaned = rawContent.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-        parsed = JSON.parse(cleaned);
-      } catch (parseErr) {
-        console.log(`${C.red}  ⚠  JSON Parse Error: ${parseErr.message}${C.reset}`);
-        console.log(`${C.dim}     Raw: ${rawContent.substring(0, 200)}${C.reset}`);
-        // Push error as developer message and retry
-        conversationHistory.push({
-          role: "assistant",
-          content: rawContent,
-        });
-        conversationHistory.push({
+        parsed = JSON.parse(raw);
+      } catch {
+        console.log(`${C.red}  ⚠  JSON Parse Error${C.reset}`);
+        console.log(`${C.dim}     Raw: ${raw.substring(0, 200)}${C.reset}`);
+        history.push({ role: "assistant", content: raw });
+        history.push({
           role: "user",
-          content: JSON.stringify({
-            step: "OBSERVE",
-            content: "Your response was not valid JSON. Please respond with ONLY a valid JSON object.",
-          }),
+          content: JSON.stringify({ step: "OBSERVE", content: "Invalid JSON. Respond with ONLY a valid JSON object, no markdown." }),
         });
         continue;
       }
 
-      // Add assistant response to history
-      conversationHistory.push({
-        role: "assistant",
-        content: JSON.stringify(parsed),
-      });
+      history.push({ role: "assistant", content: JSON.stringify(parsed) });
 
-      // ─── Handle each step type ─────────────────────────────
-
+      // ── Handle Steps ──
       if (parsed.step === "START") {
         log(C.bgBlue + C.white, "🚀", "START", parsed.content);
       }
-
       else if (parsed.step === "THINK") {
         log(C.yellow, "🧠", "THINK", parsed.content);
       }
-
       else if (parsed.step === "TOOL") {
         log(C.cyan, "🔧", `TOOL → ${parsed.tool_name}`, parsed.content);
 
-        const toolName = parsed.tool_name;
-        const toolArgs = parsed.tool_args;
-
-        if (!TOOLS[toolName]) {
-          // Unknown tool
-          const errMsg = `Tool "${toolName}" is not available. Available tools: ${Object.keys(TOOLS).join(", ")}`;
-          log(C.red, "❌", "ERROR", errMsg);
-          conversationHistory.push({
-            role: "user",
-            content: JSON.stringify({ step: "OBSERVE", content: errMsg }),
-          });
+        if (!TOOLS[parsed.tool_name]) {
+          const err = `Tool "${parsed.tool_name}" not available. Use: ${Object.keys(TOOLS).join(", ")}`;
+          log(C.red, "❌", "ERROR", err);
+          history.push({ role: "user", content: JSON.stringify({ step: "OBSERVE", content: err }) });
         } else {
-          // Execute the tool
           try {
-            const result = await TOOLS[toolName].fn(toolArgs);
-            const resultStr = typeof result === "object" ? JSON.stringify(result) : String(result);
-            const displayResult = resultStr.length > 300
-              ? resultStr.substring(0, 300) + "... (truncated)"
-              : resultStr;
-
-            log(C.green, "👁", "OBSERVE", displayResult);
-
-            conversationHistory.push({
-              role: "user",
-              content: JSON.stringify({ step: "OBSERVE", content: resultStr }),
-            });
-          } catch (toolErr) {
-            const errMsg = `Tool execution error: ${toolErr.message}`;
-            log(C.red, "❌", "TOOL ERROR", errMsg);
-            conversationHistory.push({
-              role: "user",
-              content: JSON.stringify({ step: "OBSERVE", content: errMsg }),
-            });
+            const result = await TOOLS[parsed.tool_name].fn(parsed.tool_args);
+            const str = typeof result === "object" ? JSON.stringify(result) : String(result);
+            const display = str.length > 300 ? str.substring(0, 300) + "..." : str;
+            log(C.green, "👁", "OBSERVE", display);
+            history.push({ role: "user", content: JSON.stringify({ step: "OBSERVE", content: str }) });
+          } catch (e) {
+            log(C.red, "❌", "TOOL ERROR", e.message);
+            history.push({ role: "user", content: JSON.stringify({ step: "OBSERVE", content: `Error: ${e.message}` }) });
           }
         }
       }
-
       else if (parsed.step === "OUTPUT") {
         log(C.green + C.bold, "✅", "OUTPUT", parsed.content);
-        return; // Task complete
-      }
-
-      else {
-        log(C.red, "❓", "UNKNOWN STEP", `Unknown step: ${parsed.step}`);
+        return;
       }
 
     } catch (apiErr) {
       console.log(`\n${C.red}  ⚠  API Error: ${apiErr.message}${C.reset}`);
-      if (apiErr.message.includes("rate_limit")) {
-        console.log(`${C.dim}     Waiting 5 seconds before retry...${C.reset}`);
+      if (apiErr.status === 429) {
+        console.log(`${C.dim}     Rate limit hit. Waiting 5s...${C.reset}`);
         await new Promise((r) => setTimeout(r, 5000));
-      } else {
-        break;
-      }
+      } else break;
     }
   }
 
-  if (iteration >= MAX_ITERATIONS) {
-    console.log(`\n${C.yellow}  ⚠  Reached maximum iterations (${MAX_ITERATIONS}). Stopping.${C.reset}`);
-  }
+  if (iter >= MAX_ITER) console.log(`\n${C.yellow}  ⚠  Max iterations reached.${C.reset}`);
 }
 
 // ─── Interactive CLI ─────────────────────────────────────────────────
@@ -329,12 +240,13 @@ async function agentLoop(userMessage, conversationHistory) {
 function printBanner() {
   console.log(`
 ${C.cyan}${C.bold}  ╔══════════════════════════════════════════════════════╗
-  ║            🤖  AI Agent CLI Tool  🤖                ║
-  ║     Conversational Website Cloning Agent             ║
+  ║           🤖  AI Agent CLI Tool  🤖                 ║
+  ║    Conversational Website Cloning Agent              ║
+  ║    Powered by Groq (Llama 3 API)                     ║
   ╚══════════════════════════════════════════════════════╝${C.reset}
-  ${C.dim}Type your instructions and the agent will break them down,
-  reason through them, and produce working HTML/CSS/JS files.
-  
+  ${C.dim}Type your instructions and the agent will reason through
+  them step by step and produce working HTML/CSS/JS files.
+
   Type ${C.white}"exit"${C.dim} or ${C.white}"quit"${C.dim} to leave.${C.reset}
 `);
 }
@@ -342,41 +254,29 @@ ${C.cyan}${C.bold}  ╔═══════════════════
 async function main() {
   printBanner();
 
-  // Ensure output directory exists
-  if (!existsSync("output")) {
-    mkdirSync("output");
+  if (!process.env.GROQ_API_KEY) {
+    console.log(`${C.red}${C.bold}  ❌  GROQ_API_KEY not found!${C.reset}`);
+    console.log(`${C.dim}     Get a free key at: https://console.groq.com/keys`);
+    console.log(`     Then add it to .env file: GROQ_API_KEY=your_key${C.reset}\n`);
+    process.exit(1);
   }
 
-  // Initialize conversation with system prompt
-  const conversationHistory = [
-    { role: "system", content: SYSTEM_PROMPT },
-  ];
+  if (!existsSync("output")) mkdirSync("output");
 
-  // Create readline interface for interactive chat
-  const rl = createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
+  const history = [{ role: "system", content: SYSTEM_PROMPT }];
+
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
 
   const prompt = () => {
     rl.question(`\n${C.magenta}${C.bold}  You ▶ ${C.reset}`, async (input) => {
       const trimmed = input.trim();
-
-      if (!trimmed) {
-        prompt();
-        return;
-      }
-
-      if (trimmed.toLowerCase() === "exit" || trimmed.toLowerCase() === "quit") {
+      if (!trimmed) { prompt(); return; }
+      if (["exit", "quit"].includes(trimmed.toLowerCase())) {
         console.log(`\n${C.cyan}  👋  Goodbye!${C.reset}\n`);
         rl.close();
         process.exit(0);
       }
-
-      // Run the agent loop for this user message
-      await agentLoop(trimmed, conversationHistory);
-
-      // Prompt for next input
+      await agentLoop(trimmed, history);
       prompt();
     });
   };
@@ -384,5 +284,4 @@ async function main() {
   prompt();
 }
 
-// ─── Entry Point ─────────────────────────────────────────────────────
 main();
